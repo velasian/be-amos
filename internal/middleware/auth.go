@@ -93,3 +93,55 @@ func RoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
 		c.Abort()
 	}
 }
+
+// IoTAuthMiddleware authenticates IoT devices (ESP32) via X-API-Key header.
+// It validates the key against the iot_devices table and injects the device
+// into the context for downstream handlers. This is completely separate from JWT auth.
+func IoTAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("X-API-Key")
+		if apiKey == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"status":  "error",
+				"message": "API key is required (X-API-Key header)",
+			})
+			c.Abort()
+			return
+		}
+
+		// Look up device by API key
+		var device struct {
+			ID        uint  `gorm:"primaryKey"`
+			JobSiteID *uint
+			IsActive  bool
+		}
+		if err := config.DB.Table("iot_devices").
+			Where("api_key = ?", apiKey).
+			First(&device).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"status":  "error",
+				"message": "Invalid API key: device not registered",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if device is active
+		if !device.IsActive {
+			c.JSON(http.StatusForbidden, gin.H{
+				"status":  "error",
+				"message": "Device is deactivated",
+			})
+			c.Abort()
+			return
+		}
+
+		// Inject device info into context
+		c.Set("iotDeviceID", device.ID)
+		if device.JobSiteID != nil {
+			c.Set("iotJobSiteID", *device.JobSiteID)
+		}
+
+		c.Next()
+	}
+}

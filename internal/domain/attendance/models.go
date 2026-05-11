@@ -15,6 +15,9 @@ type IoTDevice struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName overrides GORM's default table naming (prevents "io_t_devices")
+func (IoTDevice) TableName() string { return "iot_devices" }
+
 // AttendanceSession mewakili sesi sementara saat NFC baru saja di-tap
 type AttendanceSession struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`

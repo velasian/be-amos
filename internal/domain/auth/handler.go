@@ -157,3 +157,34 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah"})
 }
+
+// SaveFCMToken saves a Firebase Cloud Messaging token for push notifications.
+// POST /auth/fcm-token
+func (h *Handler) SaveFCMToken(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	var req struct {
+		Token      string `json:"token" binding:"required"`
+		DeviceInfo string `json:"device_info"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "FCM token is required",
+		})
+		return
+	}
+
+	if err := h.service.SaveFCMToken(userID, req.Token, req.DeviceInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "FCM token saved successfully",
+	})
+}

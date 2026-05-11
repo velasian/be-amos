@@ -37,6 +37,7 @@ type Service interface {
 	ForgotPassword(emailAddr string) error
 	VerifyOTP(emailAddr, code string) error
 	ResetPassword(emailAddr, otpCode, newPassword string) error
+	SaveFCMToken(userID uint, token, deviceInfo string) error
 }
 
 type service struct {
@@ -209,4 +210,8 @@ func (s *service) ResetPassword(emailAddr, otpCode, newPassword string) error {
 
 	s.repo.DeleteOTP(emailAddr)
 	return nil
+}
+
+func (s *service) SaveFCMToken(userID uint, token, deviceInfo string) error {
+	return s.repo.SaveFCMToken(userID, token, deviceInfo)
 }

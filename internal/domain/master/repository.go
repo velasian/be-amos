@@ -5,6 +5,7 @@ import "gorm.io/gorm"
 type Repository interface {
 	// JobSite
 	GetAllJobSites() ([]JobSite, error)
+	FindJobSiteByID(id uint) (*JobSite, error)
 	CreateJobSite(j *JobSite) error
 	UpdateJobSite(j *JobSite) error
 	DeleteJobSite(id uint) error
@@ -45,6 +46,11 @@ func (r *repository) GetAllJobSites() ([]JobSite, error) {
 }
 func (r *repository) CreateJobSite(j *JobSite) error {
 	return r.db.Create(j).Error
+}
+func (r *repository) FindJobSiteByID(id uint) (*JobSite, error) {
+	var js JobSite
+	err := r.db.First(&js, id).Error
+	return &js, err
 }
 func (r *repository) UpdateJobSite(j *JobSite) error {
 	return r.db.Save(j).Error

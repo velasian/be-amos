@@ -5,6 +5,7 @@ import (
 	"amos-backend/internal/domain/attendance"
 	"amos-backend/internal/domain/auth"
 	"amos-backend/internal/domain/employee"
+	"amos-backend/internal/domain/importdata"
 	"amos-backend/internal/domain/leave"
 	"amos-backend/internal/domain/master"
 	"amos-backend/internal/domain/mcu"
@@ -52,6 +53,9 @@ func main() {
 		// System
 		&notification.Notification{},
 		&system.File{},
+
+		// Import Staging
+		&importdata.EmployeeStaging{},
 	)
 
 	if err != nil {

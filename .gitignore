@@ -30,9 +30,10 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# GCP credentials (NEVER commit this!)
+# GCP / Firebase credentials (NEVER commit this!)
 gcp_key.json
 *_key.json
+*firebase*.json
 
 # Logs
 *.log

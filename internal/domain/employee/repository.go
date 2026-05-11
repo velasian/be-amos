@@ -14,7 +14,8 @@ type Repository interface {
 	DeleteEmployee(id uint) error
 
 	SaveDetail(d *EmployeeDetail) error
-	
+	SaveContractHistory(c *ContractHistory) error
+
 	GetAllEmployeesPaginated(page, limit int, search string) ([]Employee, int64, error)
 }
 
@@ -64,6 +65,10 @@ func (r *repository) DeleteEmployee(id uint) error {
 
 func (r *repository) SaveDetail(d *EmployeeDetail) error {
 	return r.db.Save(d).Error
+}
+
+func (r *repository) SaveContractHistory(c *ContractHistory) error {
+	return r.db.Save(c).Error
 }
 
 func (r *repository) GetAllEmployeesPaginated(page, limit int, search string) ([]Employee, int64, error) {
