@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log"
 	"os"
 	"time"
 
@@ -14,7 +15,10 @@ import (
 func getSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "supersecretkey" // fallback default
+		if os.Getenv("APP_ENV") == "production" {
+			log.Fatal("FATAL: JWT_SECRET environment variable must be set in production")
+		}
+		secret = "supersecretkey-dev-only"
 	}
 	return []byte(secret)
 }

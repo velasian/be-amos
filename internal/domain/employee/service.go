@@ -1,8 +1,11 @@
 package employee
 
 import (
+	"bytes"
 	"errors"
 	"time"
+
+	"github.com/xuri/excelize/v2"
 )
 
 type Service interface {
@@ -13,6 +16,7 @@ type Service interface {
 	DeleteEmployee(id uint) error
 	GetAllEmployeesPaginated(page, limit int, search string) (*PaginatedResult, error)
 	UpdateBiodata(pegawaiID uint, input UpdateBiodataInput) (*Employee, error)
+	ExportToExcel() (*bytes.Buffer, error)
 }
 
 type service struct {
@@ -295,4 +299,151 @@ func (s *service) UpdateBiodata(employeeID uint, input UpdateBiodataInput) (*Emp
 	}
 
 	return s.repo.FindByID(employeeID)
+}
+
+func (s *service) ExportToExcel() (*bytes.Buffer, error) {
+	list, err := s.repo.GetAllWithDetails()
+	if err != nil {
+		return nil, err
+	}
+
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	sheetName := "Data Pegawai"
+	f.SetSheetName("Sheet1", sheetName)
+
+	headers := []string{
+		"NRP*", "Full Name*", "Email", "Password", "Gender (M/F)",
+		"Position", "Job Site",
+		"Birth Place", "Birth Date (YYYY-MM-DD)", "Religion", "Blood Type",
+		"Marital Status", "Domicile Address", "Phone Number", "NPWP Number",
+		"Contract Type*", "Decree Number", "Contract Start* (YYYY-MM-DD)", "Contract End (YYYY-MM-DD)",
+	}
+
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"1E3A5F"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "left", Color: "000000", Style: 1},
+			{Type: "right", Color: "000000", Style: 1},
+			{Type: "top", Color: "000000", Style: 1},
+			{Type: "bottom", Color: "000000", Style: 1},
+		},
+	})
+
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetName, cell, h)
+		f.SetCellStyle(sheetName, cell, cell, headerStyle)
+	}
+
+	f.SetRowHeight(sheetName, 1, 30)
+
+	dataStyle, _ := f.NewStyle(&excelize.Style{
+		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "left", Color: "CCCCCC", Style: 1},
+			{Type: "right", Color: "CCCCCC", Style: 1},
+			{Type: "top", Color: "CCCCCC", Style: 1},
+			{Type: "bottom", Color: "CCCCCC", Style: 1},
+		},
+	})
+
+	for i, p := range list {
+		row := i + 2
+
+		formatDateVal := func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.Format("2006-01-02")
+		}
+
+		var noSK, tipeKontrak, tglMulai, tglSelesai string
+		if len(p.ContractHistory) > 0 {
+			latest := p.ContractHistory[0]
+			noSK = latest.DecreeNumber
+			if latest.ContractType != nil {
+				tipeKontrak = latest.ContractType.Name
+			}
+			tglMulai = formatDateVal(latest.StartDate)
+			tglSelesai = formatDateVal(latest.EndDate)
+		}
+
+		var d EmployeeDetail
+		if p.Detail != nil {
+			d = *p.Detail
+		}
+
+		posName := ""
+		if p.Position != nil {
+			posName = p.Position.Name
+		}
+		jsName := ""
+		if p.JobSite != nil {
+			jsName = p.JobSite.Name
+		}
+		
+		email := ""
+		if p.User != nil {
+			email = p.User.Email
+		}
+
+		data := []interface{}{
+			p.NRP,
+			p.Name,
+			email,
+			"", // Password
+			p.Gender,
+			posName,
+			jsName,
+			d.BirthPlace,
+			formatDateVal(d.BirthDate),
+			d.Religion,
+			d.BloodType,
+			d.MaritalStatus,
+			d.AddressDomicile,
+			d.PhoneNumber,
+			d.NPWPNumber,
+			tipeKontrak,
+			noSK,
+			tglMulai,
+			tglSelesai,
+		}
+
+		for j, val := range data {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			f.SetCellValue(sheetName, cell, val)
+			f.SetCellStyle(sheetName, cell, cell, dataStyle)
+		}
+	}
+
+	colWidths := map[string]float64{
+		"A": 12, "B": 25, "C": 25, "D": 12, "E": 10,
+		"F": 20, "G": 18,
+		"H": 15, "I": 20, "J": 12, "K": 10, "L": 15, "M": 35, "N": 15, "O": 20,
+		"P": 15, "Q": 20, "R": 22, "S": 22,
+	}
+
+	for col, width := range colWidths {
+		f.SetColWidth(sheetName, col, col, width)
+	}
+
+	f.SetPanes(sheetName, &excelize.Panes{
+		Freeze:      true,
+		Split:       false,
+		XSplit:      0,
+		YSplit:      1,
+		TopLeftCell: "A2",
+		ActivePane:  "bottomLeft",
+	})
+
+	buffer := new(bytes.Buffer)
+	if err := f.Write(buffer); err != nil {
+		return nil, err
+	}
+
+	return buffer, nil
 }

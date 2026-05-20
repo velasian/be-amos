@@ -2,6 +2,7 @@ package main
 
 import (
 	"amos-backend/internal/config"
+	"amos-backend/internal/domain/announcement"
 	"amos-backend/internal/domain/attendance"
 	"amos-backend/internal/domain/auth"
 	"amos-backend/internal/domain/employee"
@@ -46,9 +47,11 @@ func main() {
 		&attendance.Attendance{},
 
 		// HR Modules
+		&announcement.Announcement{},
 		&leave.LeaveRequest{},
 		&mcu.MCUSchedule{},
 		&payslip.Payslip{},
+		&payslip.PayslipStaging{},
 
 		// System
 		&notification.Notification{},

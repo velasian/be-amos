@@ -5,6 +5,7 @@ import (
 	"amos-backend/pkg/firebase"
 	"context"
 	"log"
+	"strconv"
 )
 
 // Service defines the interface for notification operations.
@@ -67,7 +68,7 @@ func (s *service) SendToUser(ctx context.Context, userID uint, notifType, title,
 
 		data := map[string]string{
 			"type":            notifType,
-			"notification_id": string(rune(notif.ID)),
+			"notification_id": strconv.FormatUint(uint64(notif.ID), 10),
 		}
 
 		for _, fcmToken := range user.FCMTokens {

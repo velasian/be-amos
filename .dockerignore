@@ -1,0 +1,11 @@
+.git
+.gitignore
+.vscode
+README.md
+API_DOCS.md
+0-core
+fe-amos
+mo-amos
+*.exe
+*.log
+tmp

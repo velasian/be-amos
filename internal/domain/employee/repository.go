@@ -17,6 +17,7 @@ type Repository interface {
 	SaveContractHistory(c *ContractHistory) error
 
 	GetAllEmployeesPaginated(page, limit int, search string) ([]Employee, int64, error)
+	GetAllWithDetails() ([]Employee, error)
 }
 
 type repository struct {
@@ -99,4 +100,19 @@ func (r *repository) GetAllEmployeesPaginated(page, limit int, search string) ([
 		Find(&e).Error
 
 	return e, total, err
+}
+
+func (r *repository) GetAllWithDetails() ([]Employee, error) {
+	var e []Employee
+	err := r.db.
+		Preload("Detail").
+		Preload("Position").
+		Preload("Department").
+		Preload("JobSite").
+		Preload("ContractHistory", func(db *gorm.DB) *gorm.DB {
+			return db.Order("id DESC").Preload("ContractType")
+		}).
+		Order("name ASC").
+		Find(&e).Error
+	return e, err
 }

@@ -160,3 +160,21 @@ func (h *Handler) DeleteEmployee(c *gin.Context) {
 		"message": "Employee deleted successfully",
 	})
 }
+
+// ExportExcel generates and serves an Excel file containing all employee data
+// GET /employees/export
+func (h *Handler) ExportExcel(c *gin.Context) {
+	buffer, err := h.service.ExportToExcel()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal meng-generate file Excel",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=data_pegawai_amos.xlsx")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer.Bytes())
+}

@@ -21,8 +21,8 @@ func (IoTDevice) TableName() string { return "iot_devices" }
 // AttendanceSession mewakili sesi sementara saat NFC baru saja di-tap
 type AttendanceSession struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	EmployeeID  uint      `gorm:"not null" json:"employee_id"` // Berelasi ke employee.Employee
-	IoTDeviceID *uint     `json:"iot_device_id"`               // Berelasi ke IoTDevice
+	EmployeeID  uint      `gorm:"not null" json:"employee_id"`                      // Berelasi ke employee.Employee
+	IoTDeviceID *uint     `json:"iot_device_id"`                                    // Berelasi ke IoTDevice
 	Status      string    `gorm:"type:varchar(50);default:'pending'" json:"status"` // pending, verified, expired
 	ScannedAt   time.Time `json:"scanned_at"`
 	ExpiresAt   time.Time `json:"expires_at"` // Waktu kadaluwarsa sesi (misal: 5 menit)
@@ -46,4 +46,51 @@ type Attendance struct {
 	RecordedAt       time.Time `json:"recorded_at"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type AttendanceListFilter struct {
+	Page         int
+	Limit        int
+	Search       string
+	StartDate    string
+	EndDate      string
+	Type         string
+	EmployeeID   *uint
+	DepartmentID *uint
+	JobSiteID    *uint
+}
+
+type AttendanceListItem struct {
+	ID               uint      `json:"id"`
+	SessionID        uint      `json:"session_id"`
+	EmployeeID       uint      `json:"employee_id"`
+	Type             string    `json:"type"`
+	SelfieURL        string    `json:"selfie_url"`
+	Latitude         float64   `json:"latitude"`
+	Longitude        float64   `json:"longitude"`
+	IsWithinGeofence bool      `json:"is_within_geofence"`
+	GeofenceDistance float64   `json:"geofence_distance"`
+	IsLate           bool      `json:"is_late"`
+	LateMinutes      int       `json:"late_minutes"`
+	RecordedAt       time.Time `json:"recorded_at"`
+	CreatedAt        time.Time `json:"created_at"`
+
+	EmployeeNRP    string `json:"employee_nrp"`
+	EmployeeName   string `json:"employee_name"`
+	DepartmentName string `json:"department_name"`
+	PositionName   string `json:"position_name"`
+	JobSiteName    string `json:"job_site_name"`
+}
+
+type AttendancePaginatedResult struct {
+	Data       []AttendanceListItem `json:"data"`
+	Total      int64                `json:"total"`
+	Page       int                  `json:"page"`
+	Limit      int                  `json:"limit"`
+	TotalPages int                  `json:"total_pages"`
+}
+
+type ActiveSessionResult struct {
+	HasActiveSession bool               `json:"has_active_session"`
+	Session          *AttendanceSession `json:"session"`
 }

@@ -25,15 +25,14 @@ func (h *Handler) DownloadTemplate(c *gin.Context) {
 	xlsx.SetSheetName("Sheet1", sheetName)
 
 	headers := []string{
-		// Core (0-4)
-		"NRP*", "Full Name*", "Email", "Password", "Gender (M/F)",
-		// Master Refs (5-6)
-		"Position", "Job Site",
-		// Details (7-14)
-		"Birth Place", "Birth Date (YYYY-MM-DD)", "Religion", "Blood Type",
-		"Marital Status", "Domicile Address", "Phone Number", "NPWP Number",
-		// Contract (15-18)
-		"Contract Type*", "Decree Number", "Contract Start* (YYYY-MM-DD)", "Contract End (YYYY-MM-DD)",
+		"NRP", "Nama Lengkap", "Email", "Password",
+		"Jabatan", "Job Site",
+		"Tempat Lahir", "Tanggal Lahir (YYYY-MM-DD)", "Jenis Kelamin (L/P)", "Agama", "Status Pernikahan", "Tanggal Pernikahan (YYYY-MM-DD)", "Golongan Darah", "Tinggi Badan (cm)", "Berat Badan (kg)",
+		"NIK", "Alamat KTP", "Alamat Domisili",
+		"No HP", "No HP Keluarga Darurat", "Nama Keluarga Darurat", "Hubungan Keluarga", "Nama Ibu Kandung",
+		"No BPJS Kesehatan", "No BPJS Ketenagakerjaan", "No NPWP", "Nama Bank", "No Rekening", "Nama Pemilik Rekening",
+		"Ukuran Baju", "Ukuran Sepatu", "Ukuran Celana",
+		"Tipe Kontrak", "No SK", "Tanggal Mulai Kontrak (YYYY-MM-DD)", "Tanggal Selesai Kontrak (YYYY-MM-DD)",
 	}
 
 	// Header style
@@ -49,15 +48,10 @@ func (h *Handler) DownloadTemplate(c *gin.Context) {
 		},
 	})
 
-	// Column widths
-	colWidths := map[string]float64{
-		"A": 12, "B": 25, "C": 25, "D": 12, "E": 10,
-		"F": 20, "G": 18,
-		"H": 15, "I": 20, "J": 12, "K": 10, "L": 15, "M": 35, "N": 15, "O": 20,
-		"P": 15, "Q": 20, "R": 22, "S": 22,
-	}
-	for col, w := range colWidths {
-		xlsx.SetColWidth(sheetName, col, col, w)
+	// Set generic column width
+	for i := 0; i < len(headers); i++ {
+		colName, _ := excelize.ColumnNumberToName(i + 1)
+		xlsx.SetColWidth(sheetName, colName, colName, 20)
 	}
 
 	xlsx.SetRowHeight(sheetName, 1, 30)

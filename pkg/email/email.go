@@ -12,8 +12,14 @@ import (
 func Send(to, subject, templateName string, data interface{}) error {
 	from := os.Getenv("EMAIL_SENDER")
 	password := os.Getenv("EMAIL_PASSWORD")
-	smtpHost := "smtp.gmail.com"
-	smtpPort := "587"
+	smtpHost := os.Getenv("SMTP_HOST")
+	if smtpHost == "" {
+		smtpHost = "smtp.gmail.com"
+	}
+	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "587"
+	}
 
 	cwd, _ := os.Getwd()
 	templatePath := filepath.Join(cwd, "assets", "templates", templateName)

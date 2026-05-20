@@ -21,6 +21,11 @@ type Service interface {
 	RegisterDevice(name string, jobSiteID uint, apiKey string) (*IoTDevice, error)
 	GetAllDevices() ([]IoTDevice, error)
 
+	// Attendance query endpoints for web and mobile clients
+	GetActiveSession(userID uint) (*ActiveSessionResult, error)
+	GetMyAttendances(userID uint, filter AttendanceListFilter) (*AttendancePaginatedResult, error)
+	GetAllAttendances(filter AttendanceListFilter) (*AttendancePaginatedResult, error)
+
 	// NFC Scan Flow (called by ESP32)
 	ProcessNFCScan(ctx context.Context, nfcUID string, deviceID uint) (*ScanResult, error)
 
@@ -42,8 +47,8 @@ type ScanResult struct {
 }
 
 type VerifyInput struct {
-	SessionID uint
-	UserID    uint // From JWT — will be resolved to employee
+	SessionID  uint
+	UserID     uint // From JWT — will be resolved to employee
 	Latitude   float64
 	Longitude  float64
 	Selfie     multipart.File
@@ -108,6 +113,70 @@ func (s *service) RegisterDevice(name string, jobSiteID uint, apiKey string) (*I
 
 func (s *service) GetAllDevices() ([]IoTDevice, error) {
 	return s.repo.GetAllDevices()
+}
+
+func (s *service) GetActiveSession(userID uint) (*ActiveSessionResult, error) {
+	emp, err := s.employeeRepo.FindByUserID(userID)
+	if err != nil || emp.ID == 0 {
+		return nil, fmt.Errorf("no employee linked to this user account")
+	}
+
+	_ = s.repo.ExpireStaleSessions()
+
+	session, err := s.repo.FindPendingSessionByEmployee(emp.ID)
+	if err != nil || session.ID == 0 {
+		return &ActiveSessionResult{
+			HasActiveSession: false,
+			Session:          nil,
+		}, nil
+	}
+
+	return &ActiveSessionResult{
+		HasActiveSession: true,
+		Session:          session,
+	}, nil
+}
+
+func (s *service) GetMyAttendances(userID uint, filter AttendanceListFilter) (*AttendancePaginatedResult, error) {
+	emp, err := s.employeeRepo.FindByUserID(userID)
+	if err != nil || emp.ID == 0 {
+		return nil, fmt.Errorf("no employee linked to this user account")
+	}
+
+	filter.EmployeeID = &emp.ID
+	return s.GetAllAttendances(filter)
+}
+
+func (s *service) GetAllAttendances(filter AttendanceListFilter) (*AttendancePaginatedResult, error) {
+	filter = normalizeAttendanceListFilter(filter)
+
+	list, total, err := s.repo.GetAttendanceList(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := int(total) / filter.Limit
+	if int(total)%filter.Limit > 0 {
+		totalPages++
+	}
+
+	return &AttendancePaginatedResult{
+		Data:       list,
+		Total:      total,
+		Page:       filter.Page,
+		Limit:      filter.Limit,
+		TotalPages: totalPages,
+	}, nil
+}
+
+func normalizeAttendanceListFilter(filter AttendanceListFilter) AttendanceListFilter {
+	if filter.Page < 1 {
+		filter.Page = 1
+	}
+	if filter.Limit < 1 || filter.Limit > 100 {
+		filter.Limit = 20
+	}
+	return filter
 }
 
 // ProcessNFCScan handles the core NFC tap flow:
@@ -210,7 +279,16 @@ func (s *service) VerifyAttendance(ctx context.Context, input VerifyInput) (*Ver
 		return nil, fmt.Errorf("session expired, please tap NFC again")
 	}
 
-	// 2. Upload selfie to MinIO
+	// 2. Run geofence check before storing the selfie.
+	geoResult, err := s.checkSessionGeofence(session, input.Latitude, input.Longitude)
+	if err != nil {
+		return nil, err
+	}
+	if !geoResult.IsWithinFence {
+		return nil, fmt.Errorf("outside geofence: distance %.0f meters from allowed job site", geoResult.Distance)
+	}
+
+	// 3. Upload selfie to MinIO
 	selfieURL := ""
 	if input.Selfie != nil {
 		objectName := storage.GenerateObjectName("attendances", employeeID, "selfie", input.SelfieName)
@@ -222,7 +300,7 @@ func (s *service) VerifyAttendance(ctx context.Context, input VerifyInput) (*Ver
 		}
 	}
 
-	// 3. Determine clock_in or clock_out
+	// 4. Determine clock_in or clock_out
 	todayRecords, _ := s.repo.GetTodayAttendanceByEmployee(employeeID)
 	attendanceType := "clock_in"
 	if len(todayRecords) > 0 {
@@ -230,22 +308,6 @@ func (s *service) VerifyAttendance(ctx context.Context, input VerifyInput) (*Ver
 		last := todayRecords[len(todayRecords)-1]
 		if last.Type == "clock_in" {
 			attendanceType = "clock_out"
-		}
-	}
-
-	// 4. Geofence check
-	var geoResult geofence.Result
-	if session.IoTDeviceID != nil {
-		device, _ := s.repo.FindDeviceByID(*session.IoTDeviceID)
-		if device != nil && device.JobSiteID != nil {
-			jobSite, err := s.masterRepo.FindJobSiteByID(*device.JobSiteID)
-			if err == nil {
-				geoResult = geofence.Check(
-					jobSite.Latitude, jobSite.Longitude,
-					input.Latitude, input.Longitude,
-					jobSite.RadiusMeters,
-				)
-			}
 		}
 	}
 
@@ -296,6 +358,33 @@ func (s *service) VerifyAttendance(ctx context.Context, input VerifyInput) (*Ver
 		LateMinutes:      lateMinutes,
 		RecordedAt:       now.Format(time.RFC3339),
 	}, nil
+}
+
+func (s *service) checkSessionGeofence(session *AttendanceSession, latitude, longitude float64) (geofence.Result, error) {
+	if session.IoTDeviceID == nil {
+		return geofence.Result{}, fmt.Errorf("attendance session has no IoT device assigned")
+	}
+
+	device, err := s.repo.FindDeviceByID(*session.IoTDeviceID)
+	if err != nil || device.ID == 0 {
+		return geofence.Result{}, fmt.Errorf("IoT device not found")
+	}
+	if device.JobSiteID == nil {
+		return geofence.Result{}, fmt.Errorf("IoT device has no job site configured")
+	}
+
+	jobSite, err := s.masterRepo.FindJobSiteByID(*device.JobSiteID)
+	if err != nil {
+		return geofence.Result{}, fmt.Errorf("job site not found")
+	}
+
+	return geofence.Check(
+		jobSite.Latitude,
+		jobSite.Longitude,
+		latitude,
+		longitude,
+		jobSite.RadiusMeters,
+	), nil
 }
 
 // BroadcastNFCUID is called by ESP32 in registration mode.

@@ -1,0 +1,31 @@
+CREATE TABLE IF NOT EXISTS employee_stagings (
+    id SERIAL PRIMARY KEY,
+    import_batch_id VARCHAR(50),
+    status VARCHAR(20) DEFAULT 'PENDING',
+    error_message TEXT,
+    nrp VARCHAR(50),
+    name VARCHAR(255),
+    email VARCHAR(100),
+    password VARCHAR(100),
+    gender VARCHAR(10),
+    position_raw VARCHAR(100),
+    job_site_raw VARCHAR(100),
+    birth_place VARCHAR(100),
+    birth_date VARCHAR(20),
+    religion VARCHAR(50),
+    blood_type VARCHAR(5),
+    marital_status VARCHAR(50),
+    address_domicile TEXT,
+    phone_number VARCHAR(20),
+    npwp_number VARCHAR(30),
+    contract_type_raw VARCHAR(50),
+    decree_number VARCHAR(100),
+    contract_start VARCHAR(20),
+    contract_end VARCHAR(20),
+    employee_status VARCHAR(50),
+    join_date VARCHAR(20),
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_employee_stagings_import_batch_id ON employee_stagings(import_batch_id);
+CREATE INDEX IF NOT EXISTS idx_employee_stagings_status ON employee_stagings(status);

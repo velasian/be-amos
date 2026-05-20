@@ -8,6 +8,7 @@ import (
 	"amos-backend/internal/domain/importdata"
 	"amos-backend/internal/domain/master"
 	"amos-backend/internal/domain/notification"
+	"amos-backend/internal/domain/report"
 	"amos-backend/internal/domain/system"
 	"amos-backend/internal/middleware"
 	"amos-backend/pkg/firebase"
@@ -25,14 +26,13 @@ func main() {
 	// 2. Connect to Database
 	config.ConnectDatabase()
 
-	// 3. Initialize MinIO Storage Client
+	// 3. Initialize External Clients (MinIO + Firebase)
 	storageClient := storage.NewMinIOClient()
-
-	// 4. Initialize Firebase Client
 	fcmClient := firebase.NewClient()
 
-	// 4. Initialize Gin Router
+	// 4. Initialize Gin Router with CORS
 	r := gin.Default()
+	r.Use(middleware.CORSMiddleware())
 
 	// 5. Basic Health Check Endpoint
 	r.GET("/ping", func(c *gin.Context) {
@@ -42,7 +42,7 @@ func main() {
 		})
 	})
 
-	// 5. Initialize Repositories, Services, and Handlers
+	// 6. Initialize Repositories, Services, and Handlers
 	authRepo := auth.NewRepository(config.DB)
 	authService := auth.NewService(authRepo)
 	authHandler := auth.NewHandler(authService)
@@ -72,7 +72,16 @@ func main() {
 	attendanceService := attendance.NewService(attendanceRepo, employeeRepo, masterRepo, notifService, storageClient, sseBroker)
 	attendanceHandler := attendance.NewHandler(attendanceService, sseBroker)
 
-	// 6. Setup API Routes
+	reportRepo := report.NewRepository(config.DB)
+	reportService := report.NewService(reportRepo)
+	reportHandler := report.NewHandler(reportService)
+
+	// Auto-Seed Master Data (sama seperti referensi)
+	// Memasukkan data JobSite, Position, dan Contract Type ke database
+	// jika belum ada. Berjalan setiap kali server startup.
+	seedMasterData(masterRepo)
+
+	// 7. Setup API Routes
 	apiV1 := r.Group("/api/v1")
 	{
 		authRoutes := apiV1.Group("/auth")
@@ -133,6 +142,7 @@ func main() {
 			hrRoutes.Use(middleware.RoleMiddleware("admin_hr"))
 			{
 				hrRoutes.GET("", employeeHandler.GetAllEmployees)
+				hrRoutes.GET("/export", employeeHandler.ExportExcel)
 				hrRoutes.GET("/:id", employeeHandler.GetEmployeeByID)
 				hrRoutes.POST("", employeeHandler.CreateEmployee)
 				hrRoutes.PUT("/:id", employeeHandler.UpdateEmployee)
@@ -203,15 +213,137 @@ func main() {
 		attendanceRoutes := apiV1.Group("/attendances")
 		attendanceRoutes.Use(middleware.AuthMiddleware())
 		{
+			attendanceRoutes.GET("/session", attendanceHandler.GetActiveSession)
+			attendanceRoutes.GET("/me", attendanceHandler.GetMyAttendances)
 			attendanceRoutes.POST("/verify", attendanceHandler.VerifyAttendance)
+
+			attendanceHRRoutes := attendanceRoutes.Group("")
+			attendanceHRRoutes.Use(middleware.RoleMiddleware("admin_hr"))
+			{
+				attendanceHRRoutes.GET("", attendanceHandler.GetAllAttendances)
+			}
+		}
+
+		// Report Routes (HR Admin only)
+		reportRoutes := apiV1.Group("/reports")
+		reportRoutes.Use(middleware.AuthMiddleware(), middleware.RoleMiddleware("admin_hr"))
+		{
+			reportRoutes.GET("/stats", reportHandler.GetStats)
+			reportRoutes.GET("/attendance/export", reportHandler.ExportAttendance)
+			reportRoutes.GET("/export", reportHandler.ExportAttendance)
 		}
 	}
 
-	// 7. Start Server
+	// 8. Start Server
 	port := config.GetEnv("PORT", "8080")
 	log.Printf("Server AMOS berjalan di port %s", port)
-	
+
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Gagal menjalankan server: %v", err)
 	}
+}
+
+// seedMasterData memasukkan data master default ke database jika belum ada.
+// Fungsi ini idempotent — aman dijalankan berulang kali tanpa menyebabkan duplikasi.
+// Data yang di-seed sama persis dengan yang ada di referensi (amos-hcgs).
+func seedMasterData(repo master.Repository) {
+	log.Println("[SEED] Memulai seeding data master...")
+
+	// ========================================
+	// 1. Seed JobSites (Lokasi Kerja)
+	// ========================================
+	// Daftar lokasi kerja standar yang digunakan di lapangan
+	sites := []string{"BRE RANTAU", "AGMR BLOK 2", "AGMR BLOK 3"}
+
+	// Ambil semua job site yang sudah ada di database
+	existingSites, _ := repo.GetAllJobSites()
+
+	// Buat map untuk pengecekan cepat apakah site sudah ada (O(1) lookup)
+	existingSiteMap := make(map[string]bool)
+	for _, s := range existingSites {
+		existingSiteMap[s.Name] = true // Kunci = nama, nilai = true (ada)
+	}
+
+	// Loop setiap site, hanya insert jika belum ada di map
+	for _, s := range sites {
+		if !existingSiteMap[s] {
+			if err := repo.CreateJobSite(&master.JobSite{Name: s}); err != nil {
+				log.Printf("[SEED] Error membuat JobSite %s: %v", s, err)
+			} else {
+				log.Printf("[SEED] JobSite dibuat: %s", s)
+			}
+		}
+	}
+
+	// ========================================
+	// 2. Seed Positions (Jabatan)
+	// ========================================
+	// Daftar jabatan standar di perusahaan mining/kontraktor
+	positions := []string{
+		"DRIVER", "DRIVER WT", "OPERATOR", "OPERATOR MASTER", "GENERAL MANAGER",
+		"PJO", "SAFETY OFFICER", "GL", "MPIS", "OFFICER",
+		"OFFICER HO", "OFFICER PLANER", "SECURITY", "WAKAR",
+		"CHIEF MEKANIK", "MEKANIK", "MEKANIK JR", "HELPER",
+		"J PART", "DRIVER SARANA LV", "KASIR", "DIREKTUR",
+	}
+
+	// Ambil semua position yang sudah ada di database
+	existingPos, err := repo.GetAllPositions()
+	if err != nil {
+		log.Printf("[SEED] Error mengambil positions: %v", err)
+	}
+	log.Printf("[SEED] Ditemukan %d positions yang sudah ada", len(existingPos))
+
+	// Buat map untuk pengecekan cepat
+	existingPosMap := make(map[string]bool)
+	for _, p := range existingPos {
+		existingPosMap[p.Name] = true
+	}
+
+	// Insert position baru yang belum ada
+	createdCount := 0
+	for _, p := range positions {
+		if !existingPosMap[p] {
+			if err := repo.CreatePosition(&master.Position{Name: p}); err != nil {
+				log.Printf("[SEED] Error membuat Position %s: %v", p, err)
+			} else {
+				createdCount++
+			}
+		}
+	}
+	log.Printf("[SEED] %d positions baru dibuat", createdCount)
+
+	// ========================================
+	// 3. Seed Contract Types (Tipe Kontrak)
+	// ========================================
+	// Daftar tipe kontrak: Kontrak I sampai IX, Permanen, dan Tidak Aktif
+	contractTypes := []string{
+		"Kontrak I", "Kontrak II", "Kontrak III", "Kontrak IV", "Kontrak V",
+		"Kontrak VI", "Kontrak VII", "Kontrak VIII", "Kontrak IX",
+		"Permanen", "Tidak Aktif",
+	}
+
+	// Ambil semua contract type yang sudah ada
+	existingCT, _ := repo.GetAllContractTypes()
+
+	// Buat map untuk pengecekan cepat
+	existingCTMap := make(map[string]bool)
+	for _, ct := range existingCT {
+		existingCTMap[ct.Name] = true
+	}
+
+	// Insert contract type baru yang belum ada
+	ctCreatedCount := 0
+	for _, ct := range contractTypes {
+		if !existingCTMap[ct] {
+			if err := repo.CreateContractType(&master.ContractType{Name: ct}); err != nil {
+				log.Printf("[SEED] Error membuat ContractType %s: %v", ct, err)
+			} else {
+				ctCreatedCount++
+			}
+		}
+	}
+	log.Printf("[SEED] %d contract types baru dibuat", ctCreatedCount)
+
+	log.Println("[SEED] Seeding selesai!")
 }

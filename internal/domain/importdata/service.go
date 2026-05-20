@@ -17,7 +17,6 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// Service defines the interface for import operations.
 type Service interface {
 	ProcessExcelToStaging(fileReader io.Reader) (string, int, error)
 	ValidateStaging(batchID string) error
@@ -33,7 +32,6 @@ type service struct {
 	authRepo     auth.Repository
 }
 
-// NewService creates a new import service with all required dependencies.
 func NewService(stagingRepo Repository, employeeRepo employee.Repository, masterRepo master.Repository, authRepo auth.Repository) Service {
 	return &service{
 		stagingRepo:  stagingRepo,
@@ -43,7 +41,6 @@ func NewService(stagingRepo Repository, employeeRepo employee.Repository, master
 	}
 }
 
-// ProcessExcelToStaging reads an Excel file and inserts rows into the staging table.
 func (s *service) ProcessExcelToStaging(fileReader io.Reader) (string, int, error) {
 	buf := new(bytes.Buffer)
 	if _, err := buf.ReadFrom(fileReader); err != nil {
@@ -79,34 +76,55 @@ func (s *service) ProcessExcelToStaging(fileReader io.Reader) (string, int, erro
 
 		item := EmployeeStaging{
 			ImportBatchID: batchID,
-			// Core (0-4)
+			// Core Data (0-3)
 			NRP:      getString(row, 0),
-			Name:     getString(row, 1),
+			Nama:     getString(row, 1),
 			Email:    getString(row, 2),
 			Password: getString(row, 3),
-			Gender:   getString(row, 4),
-			// Master Refs (5-6)
-			PositionRaw: getString(row, 5),
-			JobSiteRaw:  getString(row, 6),
-			// Details (7-14)
-			BirthPlace:      getString(row, 7),
-			BirthDate:       getString(row, 8),
-			Religion:        getString(row, 9),
-			BloodType:       getString(row, 10),
-			MaritalStatus:   getString(row, 11),
-			AddressDomicile: getString(row, 12),
-			PhoneNumber:     getString(row, 13),
-			NPWPNumber:      getString(row, 14),
-			// Contract (15-18)
-			ContractTypeRaw: getString(row, 15),
-			DecreeNumber:    getString(row, 16),
-			ContractStart:   getString(row, 17),
-			ContractEnd:     getString(row, 18),
+			// Master Data (4-5)
+			JabatanRaw:    getString(row, 4),
+			DepartemenRaw: "", // Auto-derived from Jabatan.DepartmentID
+			JobSiteRaw:    getString(row, 5),
+			// Personal Data (6-14)
+			TempatLahir:       getString(row, 6),
+			TanggalLahir:      getString(row, 7),
+			JenisKelamin:      getString(row, 8),
+			Agama:             getString(row, 9),
+			StatusPernikahan:  getString(row, 10),
+			TanggalPernikahan: getString(row, 11),
+			GolonganDarah:     getString(row, 12),
+			TinggiBadan:       getString(row, 13),
+			BeratBadan:        getString(row, 14),
+			// Identity (15-17)
+			NIK:            getString(row, 15),
+			AlamatKTP:      getString(row, 16),
+			AlamatDomisili: getString(row, 17),
+			// Contact (18-22)
+			NoHP:             getString(row, 18),
+			NoHPKeluarga:     getString(row, 19),
+			NamaKeluarga:     getString(row, 20),
+			HubunganKeluarga: getString(row, 21),
+			NamaIbuKandung:   getString(row, 22),
+			// BPJS & Finance (23-28)
+			NoBPJSKesehatan:       getString(row, 23),
+			NoBPJSKetenagakerjaan: getString(row, 24),
+			NoNPWP:                getString(row, 25),
+			NamaBank:              getString(row, 26),
+			NoRekening:            getString(row, 27),
+			PemilikRekening:       getString(row, 28),
+			// Assets (29-31)
+			UkuranBaju:   getString(row, 29),
+			UkuranSepatu: getString(row, 30),
+			UkuranCelana: getString(row, 31),
+			// Contract Data (32-35)
+			TipeKontrakRaw:        getString(row, 32),
+			NoSK:                  getString(row, 33),
+			TanggalMulaiKontrak:   getString(row, 34),
+			TanggalSelesaiKontrak: getString(row, 35),
+			// Auto-derived
+			StatusKaryawan:   getString(row, 32),
+			TanggalBergabung: getString(row, 34),
 		}
-
-		// Auto-derive status & join date from contract
-		item.EmployeeStatus = item.ContractTypeRaw
-		item.JoinDate = item.ContractStart
 
 		stagings = append(stagings, item)
 	}
@@ -122,7 +140,6 @@ func (s *service) ProcessExcelToStaging(fileReader io.Reader) (string, int, erro
 	return batchID, len(stagings), nil
 }
 
-// ValidateStaging validates all rows in a batch and marks them as VALID, UPDATE, or ERROR.
 func (s *service) ValidateStaging(batchID string) error {
 	items, err := s.stagingRepo.GetByBatchID(batchID)
 	if err != nil {
@@ -133,13 +150,11 @@ func (s *service) ValidateStaging(batchID string) error {
 		status := "VALID"
 		message := ""
 
-		// Required fields check
-		if item.NRP == "" || item.Name == "" {
+		if item.NRP == "" || item.Nama == "" {
 			status = "ERROR"
 			message += "NRP and Name are required. "
 		}
 
-		// Check if NRP already exists → mark as UPDATE
 		if status != "ERROR" {
 			existing, _ := s.employeeRepo.FindByNRP(item.NRP)
 			if existing != nil && existing.ID != 0 {
@@ -164,14 +179,12 @@ func (s *service) UpdateStagingFields(id string, updates map[string]interface{})
 	return s.stagingRepo.UpdateFields(id, updates)
 }
 
-// CommitStaging processes all VALID/UPDATE rows and creates real records.
 func (s *service) CommitStaging(batchID string) (int, int, error) {
 	validItems, err := s.stagingRepo.GetValidByBatchID(batchID)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	// Pre-load master data for name → ID resolution
 	positions, _ := s.masterRepo.GetAllPositions()
 	jobSites, _ := s.masterRepo.GetAllJobSites()
 	contractTypes, _ := s.masterRepo.GetAllContractTypes()
@@ -195,7 +208,6 @@ func (s *service) CommitStaging(batchID string) (int, int, error) {
 			continue
 		}
 
-		// CREATE new employee with user account
 		if err := s.createNewEmployee(stg, positions, jobSites, contractTypes); err != nil {
 			log.Printf("[IMPORT] Failed to create NRP %s: %v", stg.NRP, err)
 			failed++
@@ -210,23 +222,19 @@ func (s *service) CommitStaging(batchID string) (int, int, error) {
 	return success, failed, nil
 }
 
-// createNewEmployee creates a user account, employee, detail, and contract history.
 func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Position, jobSites []master.JobSite, contractTypes []master.ContractType) error {
-	nameUpper := strings.ToUpper(stg.Name)
+	nameUpper := strings.ToUpper(stg.Nama)
 
-	// Generate default password if empty
 	password := stg.Password
 	if password == "" {
 		password = stg.NRP + "123"
 	}
 
-	// Generate email if empty
 	email := strings.TrimSpace(stg.Email)
 	if email == "" {
 		email = strings.ToLower(stg.NRP) + "@amos.internal"
 	}
 
-	// Hash password and create user account
 	hashedPassword, err := utils.HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
@@ -244,20 +252,16 @@ func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Posi
 		return fmt.Errorf("failed to create user account: %w", err)
 	}
 
-	log.Printf("[IMPORT] User created for NRP %s (UserID: %d, Email: %s)", stg.NRP, user.ID, email)
-
-	// Build Employee
 	emp := &employee.Employee{
 		UserID: &user.ID,
 		NRP:    stg.NRP,
 		Name:   nameUpper,
-		Gender: stg.Gender,
+		Gender: stg.JenisKelamin,
 		Status: "AKTIF",
 	}
 
-	// Resolve Position → also auto-derive Department
 	for _, pos := range positions {
-		if strings.EqualFold(pos.Name, stg.PositionRaw) {
+		if strings.EqualFold(pos.Name, stg.JabatanRaw) {
 			emp.PositionID = &pos.ID
 			if pos.DepartmentID != nil {
 				emp.DepartmentID = pos.DepartmentID
@@ -266,7 +270,6 @@ func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Posi
 		}
 	}
 
-	// Resolve JobSite
 	for _, js := range jobSites {
 		if strings.EqualFold(js.Name, stg.JobSiteRaw) {
 			emp.JobSiteID = &js.ID
@@ -274,9 +277,8 @@ func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Posi
 		}
 	}
 
-	// Parse JoinDate
-	if stg.JoinDate != "" {
-		if t, err := time.Parse("2006-01-02", stg.JoinDate); err == nil {
+	if stg.TanggalBergabung != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalBergabung); err == nil {
 			emp.JoinDate = t
 		}
 	}
@@ -285,22 +287,43 @@ func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Posi
 		return fmt.Errorf("failed to create employee: %w", err)
 	}
 
-	// Create EmployeeDetail
 	detail := &employee.EmployeeDetail{
-		EmployeeID:      emp.ID,
-		NIK:             stg.BirthPlace, // Will be overwritten below
-		BirthPlace:      stg.BirthPlace,
-		Religion:        stg.Religion,
-		BloodType:       stg.BloodType,
-		MaritalStatus:   stg.MaritalStatus,
-		AddressDomicile: stg.AddressDomicile,
-		PhoneNumber:     stg.PhoneNumber,
-		NPWPNumber:      stg.NPWPNumber,
+		EmployeeID:        emp.ID,
+		NIK:               stg.NIK,
+		BirthPlace:        stg.TempatLahir,
+		Religion:          stg.Agama,
+		BloodType:         stg.GolonganDarah,
+		MaritalStatus:     stg.StatusPernikahan,
+		AddressKTP:        stg.AlamatKTP,
+		AddressDomicile:   stg.AlamatDomisili,
+		PhoneNumber:       stg.NoHP,
+		PersonalEmail:     stg.Email,
+		NPWPNumber:        stg.NoNPWP,
+		BPJSKesehatan:     stg.NoBPJSKesehatan,
+		BPJSTenagaKerja:   stg.NoBPJSKetenagakerjaan,
+		BankName:          stg.NamaBank,
+		BankAccount:       stg.NoRekening,
+		BankAccountName:   stg.PemilikRekening,
+		ShirtSize:         stg.UkuranBaju,
+		ShoeSize:          stg.UkuranSepatu,
+		PantsSize:         stg.UkuranCelana,
+		MotherName:        stg.NamaIbuKandung,
+		EmergencyName:     stg.NamaKeluarga,
+		EmergencyRelation: stg.HubunganKeluarga,
+		EmergencyPhone:    stg.NoHPKeluarga,
 	}
 
-	if stg.BirthDate != "" {
-		if t, err := time.Parse("2006-01-02", stg.BirthDate); err == nil {
+	detail.Height = parseInt(stg.TinggiBadan)
+	detail.Weight = parseInt(stg.BeratBadan)
+
+	if stg.TanggalLahir != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalLahir); err == nil {
 			detail.BirthDate = t
+		}
+	}
+	if stg.TanggalPernikahan != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalPernikahan); err == nil {
+			detail.MarriageDate = &t
 		}
 	}
 
@@ -308,25 +331,21 @@ func (s *service) createNewEmployee(stg EmployeeStaging, positions []master.Posi
 		log.Printf("[IMPORT] Warning: failed to save detail for NRP %s: %v", stg.NRP, err)
 	}
 
-	// Create ContractHistory if data exists
-	if stg.ContractTypeRaw != "" {
+	if stg.TipeKontrakRaw != "" {
 		s.createContractHistory(emp.ID, stg, contractTypes)
 	}
 
-	log.Printf("[IMPORT] ✓ Employee created: NRP %s (ID: %d)", stg.NRP, emp.ID)
 	return nil
 }
 
-// updateExistingEmployee updates core and detail fields for an existing employee.
 func (s *service) updateExistingEmployee(emp *employee.Employee, stg EmployeeStaging, positions []master.Position, jobSites []master.JobSite) error {
-	emp.Name = strings.ToUpper(stg.Name)
-	if stg.Gender != "" {
-		emp.Gender = stg.Gender
+	emp.Name = strings.ToUpper(stg.Nama)
+	if stg.JenisKelamin != "" {
+		emp.Gender = stg.JenisKelamin
 	}
 
-	// Resolve Position
 	for _, pos := range positions {
-		if strings.EqualFold(pos.Name, stg.PositionRaw) {
+		if strings.EqualFold(pos.Name, stg.JabatanRaw) {
 			emp.PositionID = &pos.ID
 			if pos.DepartmentID != nil {
 				emp.DepartmentID = pos.DepartmentID
@@ -335,7 +354,6 @@ func (s *service) updateExistingEmployee(emp *employee.Employee, stg EmployeeSta
 		}
 	}
 
-	// Resolve JobSite
 	for _, js := range jobSites {
 		if strings.EqualFold(js.Name, stg.JobSiteRaw) {
 			emp.JobSiteID = &js.ID
@@ -343,71 +361,93 @@ func (s *service) updateExistingEmployee(emp *employee.Employee, stg EmployeeSta
 		}
 	}
 
+	if stg.TanggalBergabung != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalBergabung); err == nil {
+			emp.JoinDate = t
+		}
+	}
+
 	if err := s.employeeRepo.UpdateEmployee(emp); err != nil {
 		return err
 	}
 
-	// Update detail
 	detail := emp.Detail
 	if detail == nil {
 		detail = &employee.EmployeeDetail{EmployeeID: emp.ID}
 	}
 
-	detail.BirthPlace = stg.BirthPlace
-	detail.Religion = stg.Religion
-	detail.BloodType = stg.BloodType
-	detail.MaritalStatus = stg.MaritalStatus
-	detail.AddressDomicile = stg.AddressDomicile
-	detail.PhoneNumber = stg.PhoneNumber
-	detail.NPWPNumber = stg.NPWPNumber
+	detail.NIK = stg.NIK
+	detail.BirthPlace = stg.TempatLahir
+	detail.Religion = stg.Agama
+	detail.BloodType = stg.GolonganDarah
+	detail.MaritalStatus = stg.StatusPernikahan
+	detail.AddressKTP = stg.AlamatKTP
+	detail.AddressDomicile = stg.AlamatDomisili
+	detail.PhoneNumber = stg.NoHP
+	detail.PersonalEmail = stg.Email
+	detail.NPWPNumber = stg.NoNPWP
+	detail.BPJSKesehatan = stg.NoBPJSKesehatan
+	detail.BPJSTenagaKerja = stg.NoBPJSKetenagakerjaan
+	detail.BankName = stg.NamaBank
+	detail.BankAccount = stg.NoRekening
+	detail.BankAccountName = stg.PemilikRekening
+	detail.ShirtSize = stg.UkuranBaju
+	detail.ShoeSize = stg.UkuranSepatu
+	detail.PantsSize = stg.UkuranCelana
+	detail.MotherName = stg.NamaIbuKandung
+	detail.EmergencyName = stg.NamaKeluarga
+	detail.EmergencyRelation = stg.HubunganKeluarga
+	detail.EmergencyPhone = stg.NoHPKeluarga
+	detail.Height = parseInt(stg.TinggiBadan)
+	detail.Weight = parseInt(stg.BeratBadan)
 
-	if stg.BirthDate != "" {
-		if t, err := time.Parse("2006-01-02", stg.BirthDate); err == nil {
+	if stg.TanggalLahir != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalLahir); err == nil {
 			detail.BirthDate = t
+		}
+	}
+	if stg.TanggalPernikahan != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalPernikahan); err == nil {
+			detail.MarriageDate = &t
 		}
 	}
 
 	return s.employeeRepo.SaveDetail(detail)
 }
 
-// createContractHistory resolves contract type by name and creates a history record.
 func (s *service) createContractHistory(employeeID uint, stg EmployeeStaging, contractTypes []master.ContractType) {
 	var contractTypeID uint
 	for _, ct := range contractTypes {
-		if strings.EqualFold(ct.Name, stg.ContractTypeRaw) {
+		if strings.EqualFold(ct.Name, stg.TipeKontrakRaw) {
 			contractTypeID = ct.ID
 			break
 		}
 	}
 
 	if contractTypeID == 0 {
-		log.Printf("[IMPORT] Warning: Contract type '%s' not found in master data for NRP %s", stg.ContractTypeRaw, stg.NRP)
 		return
 	}
 
 	contract := &employee.ContractHistory{
 		EmployeeID:     employeeID,
 		ContractTypeID: &contractTypeID,
-		DecreeNumber:   stg.DecreeNumber,
+		DecreeNumber:   stg.NoSK,
 	}
 
-	if stg.ContractStart != "" {
-		if t, err := time.Parse("2006-01-02", stg.ContractStart); err == nil {
+	if stg.TanggalMulaiKontrak != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalMulaiKontrak); err == nil {
 			contract.StartDate = t
 		}
 	}
-	if stg.ContractEnd != "" {
-		if t, err := time.Parse("2006-01-02", stg.ContractEnd); err == nil {
+	if stg.TanggalSelesaiKontrak != "" {
+		if t, err := time.Parse("2006-01-02", stg.TanggalSelesaiKontrak); err == nil {
 			contract.EndDate = t
 		}
 	}
 
-	if err := s.employeeRepo.SaveContractHistory(contract); err != nil {
-		log.Printf("[IMPORT] Warning: failed to save contract for NRP %s: %v", stg.NRP, err)
-	}
+	_ = s.employeeRepo.SaveContractHistory(contract)
 }
 
-// getString safely gets a string value from a row slice.
 func getString(row []string, index int) string {
 	if index < len(row) {
 		return strings.TrimSpace(row[index])
@@ -415,7 +455,6 @@ func getString(row []string, index int) string {
 	return ""
 }
 
-// parseInt converts a string to int, returning 0 on failure.
 func parseInt(s string) int {
 	s = strings.TrimSpace(s)
 	if s == "" {

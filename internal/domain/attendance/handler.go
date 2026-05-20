@@ -2,9 +2,9 @@ package attendance
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -127,6 +127,83 @@ func (h *Handler) VerifyAttendance(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Attendance verified successfully",
+		"data":    result,
+	})
+}
+
+// GetActiveSession returns the authenticated employee's pending NFC session.
+// GET /attendances/session
+func (h *Handler) GetActiveSession(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	result, err := h.service.GetActiveSession(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Active attendance session retrieved",
+		"data":    result,
+	})
+}
+
+// GetMyAttendances returns attendance history for the authenticated employee.
+// GET /attendances/me?page=1&limit=20&start_date=2026-05-01&end_date=2026-05-31
+func (h *Handler) GetMyAttendances(c *gin.Context) {
+	filter, err := parseAttendanceListFilter(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	result, err := h.service.GetMyAttendances(c.GetUint("userID"), filter)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Attendance history retrieved",
+		"data":    result,
+	})
+}
+
+// GetAllAttendances returns paginated attendance data for HR monitoring.
+// GET /attendances?page=1&limit=20&search=budi&type=clock_in&department_id=1
+func (h *Handler) GetAllAttendances(c *gin.Context) {
+	filter, err := parseAttendanceListFilter(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	result, err := h.service.GetAllAttendances(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Attendance data retrieved",
 		"data":    result,
 	})
 }
@@ -295,5 +372,65 @@ func (h *Handler) AssignNFC(c *gin.Context) {
 	})
 }
 
-// Ensure io is used (for SSE streaming compatibility)
-var _ = io.Discard
+func parseAttendanceListFilter(c *gin.Context) (AttendanceListFilter, error) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	filter := AttendanceListFilter{
+		Page:      page,
+		Limit:     limit,
+		Search:    c.Query("search"),
+		StartDate: c.Query("start_date"),
+		EndDate:   c.Query("end_date"),
+		Type:      c.Query("type"),
+	}
+
+	if filter.StartDate != "" {
+		if _, err := time.Parse("2006-01-02", filter.StartDate); err != nil {
+			return filter, fmt.Errorf("invalid start_date format, expected YYYY-MM-DD")
+		}
+	}
+	if filter.EndDate != "" {
+		if _, err := time.Parse("2006-01-02", filter.EndDate); err != nil {
+			return filter, fmt.Errorf("invalid end_date format, expected YYYY-MM-DD")
+		}
+	}
+	if filter.Type != "" && filter.Type != "clock_in" && filter.Type != "clock_out" {
+		return filter, fmt.Errorf("invalid type, expected clock_in or clock_out")
+	}
+
+	employeeID, err := parseOptionalUintQuery(c, "employee_id")
+	if err != nil {
+		return filter, err
+	}
+	filter.EmployeeID = employeeID
+
+	departmentID, err := parseOptionalUintQuery(c, "department_id")
+	if err != nil {
+		return filter, err
+	}
+	filter.DepartmentID = departmentID
+
+	jobSiteID, err := parseOptionalUintQuery(c, "job_site_id")
+	if err != nil {
+		return filter, err
+	}
+	filter.JobSiteID = jobSiteID
+
+	return filter, nil
+}
+
+func parseOptionalUintQuery(c *gin.Context, key string) (*uint, error) {
+	value := c.Query(key)
+	if value == "" {
+		return nil, nil
+	}
+
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil || parsed == 0 {
+		return nil, fmt.Errorf("invalid %s", key)
+	}
+
+	result := uint(parsed)
+	return &result, nil
+}

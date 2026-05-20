@@ -4,42 +4,56 @@ import (
 	"time"
 )
 
-// EmployeeStaging acts as a temporary buffer for imported Excel data.
-// All fields are strings to safely hold raw values before validation and parsing.
 type EmployeeStaging struct {
 	ID            uint   `gorm:"primaryKey" json:"id"`
-	ImportBatchID string `gorm:"index;type:varchar(50)" json:"import_batch_id"`
-	Status        string `gorm:"index;type:varchar(20);default:'PENDING'" json:"status"` // PENDING, VALID, UPDATE, ERROR
+	ImportBatchID string `gorm:"index;size:50" json:"import_batch_id"`
+	Status        string `gorm:"index;size:20;default:'PENDING'" json:"status"`
 	ErrorMessage  string `gorm:"type:text" json:"error_message"`
 
-	// Core Employee Data
-	NRP      string `gorm:"type:varchar(50)" json:"nrp"`
-	Name     string `gorm:"type:varchar(255)" json:"name"`
-	Email    string `gorm:"type:varchar(100)" json:"email"`
-	Password string `gorm:"type:varchar(100)" json:"-"`
-	Gender   string `gorm:"type:varchar(10)" json:"gender"`
+	// Core Data (Raw)
+	NRP              string `gorm:"size:50" json:"nrp"`
+	Nama             string `gorm:"size:100" json:"nama"`
+	Email            string `gorm:"size:100" json:"email"`
+	Password         string `gorm:"size:100" json:"password"`
+	JabatanRaw       string `gorm:"size:100" json:"jabatan_raw"`
+	DepartemenRaw    string `gorm:"size:100" json:"departemen_raw"`
+	JobSiteRaw       string `gorm:"size:100" json:"jobsite_raw"`
+	StatusKaryawan   string `gorm:"size:50" json:"status_karyawan"`
+	TanggalBergabung string `gorm:"size:20" json:"tanggal_bergabung"`
 
-	// Master Data References (raw strings for lookup)
-	PositionRaw string `gorm:"type:varchar(100)" json:"position_raw"`
-	JobSiteRaw  string `gorm:"type:varchar(100)" json:"job_site_raw"`
-
-	// Employee Details
-	BirthPlace      string `gorm:"type:varchar(100)" json:"birth_place"`
-	BirthDate       string `gorm:"type:varchar(20)" json:"birth_date"`
-	Religion        string `gorm:"type:varchar(50)" json:"religion"`
-	BloodType       string `gorm:"type:varchar(5)" json:"blood_type"`
-	MaritalStatus   string `gorm:"type:varchar(50)" json:"marital_status"`
-	AddressDomicile string `gorm:"type:text" json:"address_domicile"`
-	PhoneNumber     string `gorm:"type:varchar(20)" json:"phone_number"`
-	NPWPNumber      string `gorm:"type:varchar(30)" json:"npwp_number"`
+	// Details (Raw)
+	TempatLahir           string `json:"tempat_lahir"`
+	TanggalLahir          string `json:"tanggal_lahir"`
+	JenisKelamin          string `json:"jenis_kelamin"`
+	Agama                 string `json:"agama"`
+	StatusPernikahan      string `json:"status_pernikahan"`
+	GolonganDarah         string `json:"golongan_darah"`
+	NIK                   string `json:"nik"`
+	AlamatKTP             string `json:"alamat_ktp"`
+	AlamatDomisili        string `json:"alamat_domisili"`
+	NoHP                  string `json:"no_hp"`
+	NoHPKeluarga          string `json:"no_hp_keluarga"`
+	NamaKeluarga          string `json:"nama_keluarga"`
+	HubunganKeluarga      string `json:"hubungan_keluarga"`
+	NamaIbuKandung        string `json:"nama_ibu_kandung"`
+	NoBPJSKesehatan       string `json:"no_bpjs_kesehatan"`
+	NoBPJSKetenagakerjaan string `json:"no_bpjs_ketenagakerjaan"`
+	NoNPWP                string `json:"no_npwp"`
+	NamaBank              string `json:"nama_bank"`
+	NoRekening            string `json:"no_rekening"`
+	PemilikRekening       string `json:"pemilik_rekening"`
+	UkuranBaju            string `json:"ukuran_baju"`
+	UkuranSepatu          string `json:"ukuran_sepatu"`
+	UkuranCelana          string `json:"ukuran_celana"`
+	TinggiBadan           string `json:"tinggi_badan"`
+	BeratBadan            string `json:"berat_badan"`
+	TanggalPernikahan     string `json:"tanggal_pernikahan"`
 
 	// Contract Data
-	ContractTypeRaw  string `gorm:"type:varchar(50)" json:"contract_type_raw"`
-	DecreeNumber     string `gorm:"type:varchar(100)" json:"decree_number"`
-	ContractStart    string `gorm:"type:varchar(20)" json:"contract_start"`
-	ContractEnd      string `gorm:"type:varchar(20)" json:"contract_end"`
-	EmployeeStatus   string `gorm:"type:varchar(50)" json:"employee_status"` // Auto-derived from contract
-	JoinDate         string `gorm:"type:varchar(20)" json:"join_date"`       // Auto-derived from contract start
+	TipeKontrakRaw        string `json:"tipe_kontrak_raw"`
+	NoSK                  string `json:"no_sk"`
+	TanggalMulaiKontrak   string `json:"tanggal_mulai_kontrak"`
+	TanggalSelesaiKontrak string `json:"tanggal_selesai_kontrak"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
